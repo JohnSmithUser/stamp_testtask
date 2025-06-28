@@ -1,5 +1,5 @@
 class BarrierStateMachine:
-    def __init__(self, min_frames_presence=5):
+    def __init__(self, min_frames_presence=10):
         self.state = "NO_VEHICLE"
         self.presence_counter = 0
         self.min_frames_presence = min_frames_presence
