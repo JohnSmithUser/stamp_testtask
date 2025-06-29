@@ -22,23 +22,53 @@ def load_roi_from_config(path):
         path (str): Путь к YAML файлу с конфигурацией.
 
     Returns:
-        np.ndarray: Массив координат полигона ROI в формате int32.
+        config (dict): Словарь с конфигурацией.
     """
     try:
         with open(path, "r") as f:
             config = yaml.safe_load(f)
-        return np.array(config['ROI'], dtype=np.int32), config["WHITE_LIST"]
+        return config
+
     except Exception as e:
         logger.error(f"Ошибка при загрузке ROI: {e}")
         raise
+
+
+def video_writer(cap, output_path="result/result.avi"):
+    """Создание объекта для записи видео.
+
+    Args:
+        cap (cv2.VideoCapture): Объект захвата видео.
+        output_path (str): Путь к выходному видеофайлу.
+
+    Returns:
+        cv2.VideoWriter: Объект для записи видео.
+    """
+    # Создаём директорию, если не существует
+    output_dir = Path(output_path).parent
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Получаем размер кадра из видео
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    fps = cap.get(cv2.CAP_PROP_FPS) or 30
+    
+    fourcc = cv2.VideoWriter_fourcc(*"XVID")
+    logger.info(f"Видео будет сохранено в {output_path}")
+    
+    return cv2.VideoWriter(output_path, fourcc, fps, (width, height))
         
 
-def run(video_path, model_path, config_path="config.yaml"):
+def run(video_path, model_path, roi, white_list, show: bool, output_path="result/result.avi"):
+    """Запуск детектора транспортных средств на видео с использованием модели YOLOv8n в формате ONNX.
+
+    Args:
+        video_path (str): Путь к видеофайлу, который нужно обработать.
+        model_path (str): Путь к ONNX модели YOLOv8n.
+    """
     if not Path(video_path).exists() or not Path(model_path).exists():
         logger.error("Файл видео или модели не найден.")
         return
-    
-    roi, white_list = load_roi_from_config(config_path)
     
     try:
         session = ort.InferenceSession(model_path, providers=["CPUExecutionProvider"])
@@ -53,6 +83,8 @@ def run(video_path, model_path, config_path="config.yaml"):
         return
     
     state_machine = BarrierStateMachine()
+    if not show:
+        writer = video_writer(cap, output_path)
     
     logger.info("Запуск детектора транспортных средств...")
     
@@ -74,9 +106,12 @@ def run(video_path, model_path, config_path="config.yaml"):
         state = state_machine.update(vehicle_in_roi)
         draw_ui(frame, detections, roi, state, white_list)
         
-        cv2.imshow("YOLOv8n ONNX", cv2.resize(frame, (1280, 720)))
-        if cv2.waitKey(1) == 27:  # ESC key to exit
-            break
+        if show:
+            cv2.imshow("YOLOv8n ONNX", cv2.resize(frame, (1280, 720)))
+            if cv2.waitKey(1) == 27:  # ESC key to exit
+                break
+        else:
+            writer.write(frame)
     
     cap.release()
     cv2.destroyAllWindows()
@@ -84,8 +119,13 @@ def run(video_path, model_path, config_path="config.yaml"):
 
 # === Main ===
 if __name__ == "__main__":
+    config = load_roi_from_config("config.yaml")
+
     run(
-        video_path="cvtest.avi",  # Путь к видеофайлу
-        model_path="model/yolov8n.onnx",  # Путь к ONNX модели
-        config_path="config.yaml"  # Путь к конфигурационному файлу с ROI
+        video_path=config["video_path"],
+        model_path=config["model_path"],
+        roi=np.array(config['ROI'], dtype=np.int32),
+        white_list=config['WHITE_LIST'],
+        show=config["show"],
+        output_path=config["output_path"]
     )
